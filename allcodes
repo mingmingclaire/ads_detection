@@ -1,0 +1,186 @@
+---
+title: "STAT 151A Final Project - Ads"
+author: "Mingming Gu"
+date: "4/25/2017"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+ad_data <- read.csv("/Users/tjgumingming/Documents/UCB/Spring 2017/STAT 151A/Final Project/ad.data", header = FALSE, stringsAsFactors = FALSE)
+
+# Introduction
+
+# In this era of information, a website, or each webpage, can carry massive literal and visual information, and we can see ads all around the places of a website. The objective of this project is to build an appropriate model with some combination of the 1558 variables and develop a predictor to test whether an image, whichever we will be given, on a website is an advertisement or not. 
+
+# Data Description
+
+# In this data set, the number of observations is 3279, including 2820 "nonad." and 459 "ad.". Among a great number of variables, there are 3 "continuous-valued variables", which are height, width and aspect ratio of the image. The very last column indicates whether the image is an advertisement or not, which can be converted to 0 or 1. This is the response variable that we need to predict. Besides these variables, all others are dummy variables, valued 0 or 1, meaning whether the characteristic is shown in that image or not. The summary and graph of the raw data for the first three variables is shown below. 
+
+summary(ad_data[, 1:3])
+plot(ad_data$V1, main = "Raw Data of Variable Height")
+
+plot(ad_data$V2, main = "Raw Data of Variable Width")
+
+plot(ad_data$V3, main = "Raw Data of Variable Aspect Ratio")
+
+#We know that, for the first three variables, roughly 1/3 of images have missing values "?". First, I convert all "?" to "NA" to keep them numeric for the next step. To be accurate, I find that the number of rows with NA elements in either V1, V2 or V3 is 920. The remaining complete data set has 2359 rows. The proportion of missing data is significant, so I am not simply ignoring those missings. I extract all available and complete rows of data and leave the rows with NA entries for later investigation. Also, I figure out there exists 863 duplicated columns, so I make the dimension of the model shrunk to 2359 x 695. The largest possible model has 695 variables. 
+
+ad_data$V1559[which(ad_data$V1559 == "ad.")] <- 1
+ad_data$V1559[which(ad_data$V1559 == "nonad.")] <- 0
+
+ad_data <- as.data.frame(sapply(ad_data, as.numeric))
+ad_data$V1[ad_data$V1 == "?"] <- NA
+ad_data$V2[ad_data$V2 == "?"] <- NA
+ad_data$V3[ad_data$V3 == "?"] <- NA
+which(sapply(ad_data[, 4:1559], function(x) any(is.na(x))) == TRUE)
+# V4 and V1559 columns contain missing data
+ad_data$V4[ad_data$V4 == "?"] <- NA 
+which(sapply(ad_data[, 4], function(x) any(is.na(x))) == TRUE) 
+# 15 entries are NA in V4
+all(!is.na(ad_data[, 1559]))
+# No missing data in V1559
+
+# Data frame after removing NA in 1558 input variables has 2359 rows
+fulldata <- subset(ad_data, (!is.na(ad_data$V1)) & (!is.na(ad_data$V2)) & (!is.na(ad_data$V3)) & (!is.na(ad_data$V4)))
+# Data frame with missing data in input variables has 920 rows
+missdata <- subset(ad_data, (is.na(ad_data$V1)) | (is.na(ad_data$V2)) | (is.na(ad_data$V3)) | (is.na(ad_data$V4)))
+
+log.data <- log(fulldata[ ,1:3])
+log.five <- lapply(log.data[ ,1:3], fivenum)
+ratio <- function(x) {
+  r <- (x[4] - x[3]) / (x[3] - x[2])
+  return(r)
+}
+log.ratio <- lapply(log.data[1:3], ratio)
+
+sqrt.data <- sqrt(fulldata[ ,1:3])
+sqrt.five <- lapply(sqrt.data[ ,1:3], fivenum)
+sqrt.ratio <- lapply(sqrt.data[1:3], ratio)
+
+
+# Discussion
+
+# By looking at the distribution of the original data in variables V1, V2, V3, we can generally say that they are all right-skewed. I compute and compare the ratios (upperQ - median)/(median - lowerQ). Also, I observe the variability of data to make sure that the variance of transformed data contain fluctuation as little as possible. As a result, I decide to choose logarithm transformation to V1 "height", V2 "width", and V3 "aspect ratio". The reason for choosing log rather than square root is that the absolute value of the ratio for logarithm is closer to 1 than square root transformation approach. The data distribution histograms, for each of the first three variables, after making the transformation are present below. The distribution looks more normal, despite the fact that there are some outstanding spikes, which are to be investigated later. 
+
+
+hist(log.data$V1, breaks = 20)
+
+hist(log.data$V2, breaks = 20)
+
+hist(log.data$V3, breaks = 20)
+
+# Data Frame with first three explanatory variables
+adsExp <- cbind.data.frame(log.data$V1, log.data$V2, log.data$V3)
+# Combine the transformed first three columns with the rest of variables
+ads <- cbind.data.frame(adsExp, fulldata[,-c(1:3)])
+m <- nrow(ads)
+n <- ncol(ads)
+# Check if any columns from V4 to V1558 is duplicated
+# Remove the duplicated columns to reduce dimensionality 
+Ads <- ads[, 4:1558]
+Ads <- Ads[, - which(duplicated(t(Ads)))]
+Adsfull <- cbind.data.frame(adsExp, Ads, ads[,1559])
+# Adsfull is the simplified data frame that we use to fit model (dimension is 2359 x (695 + 1)), include y response 
+
+with(adsExp, plot(adsExp$`log.data$V1` ~ adsExp$`log.data$V2`, pch = 19, cex = 0.7))
+with(adsExp, plot(adsExp$`log.data$V3` ~ adsExp$`log.data$V1`, pch = 19, cex = 0.7))
+with(adsExp, plot(adsExp$`log.data$V3` ~ adsExp$`log.data$V2`, pch = 19, cex = 0.7))
+
+pairs(adsExp, pch = 21)
+
+# When exploring the relationship between pairs in the first three variables, I discover that V3 and V1 are negatively related, while V3 and V2 are not strictly linearly correlated. The line associated transformed V2 with transformed V1 might have a split into two groups. The final fitted model probably does not contain all of V1, V2, V3.
+
+# The variances of height, weight and aspect ratio are different, so I standardize them for the aim of principal components to reduce dimensionality. PCA is a method to reduce dimensionality, and the regular PCA method should work fine with explanatory variables. After tried the regular PCA on the residual great amount of binary variables, I don't believe it is a proper way to do so. 
+
+# Variability
+options(digits = 3)
+# Scale first three explanatory variables
+adsExp01 <- as.data.frame(scale(ads[, 1:3]))
+sapply(adsExp01, sd)
+# Dimensionality Reduction
+ads.pca <- prcomp(adsExp01)
+ads.pca$rotation
+
+# Or, Scale all variables
+#AdsExp02 <- as.data.frame(scale(as.matrix(Adsfull)))
+#sapply(AdsExp02, sd)
+# Dimensionality Reduction
+#Ads.pca02 <- prcomp(AdsExp02)  # infinite or missing values in x ?
+#Ads.pca02$rotation
+#library(MASS)
+#plot(mca(ads[, -1:3]))
+
+# Because the response variable we are trying to predict is a binary variable, so I use binomial logistic regression model to fit the data. The glmnet() function particularly works for large amount of data. X is the matrix of 695 input variables, including 3 explanatory variables and 692 dummy variables, and Y is the given response variable, “ad.” Or “nonad.”. We should obtain estimated value of coefficients with a properly chosen lambda value. The plots below give us a good sense of how the model is fitted.
+
+y <- Adsfull[, 696] # Response variable
+x <- as.matrix(Adsfull[, 1:695])
+lm <- lm(y ~ x, data = Adsfull)
+summary(lm)
+which(summary(lm)$coefficients[,4] < 0.001)
+
+
+## GLM glmnet function method
+library("glmnet")
+fit <- glmnet(x, y, family = "binomial")
+fit.ridge <- glmnet(x, y, alpha = 0)
+fit.lasso <- glmnet(x, y, alpha = 1)
+
+plot(fit, xvar = "dev", label = TRUE, 
+     main = "Plot of Fitted Binomial Logistic Model Coefficients against Fraction Deviance Explained")
+
+
+# * Coefficients are not convergent to 0 at the same fraction deviance explained level. But when fraction deviance explained get closer to 0, essentially all coefficients reach 0.
+
+plot(fit.ridge, xvar = "dev", label = TRUE, 
+     main = "Plot of Fitted Ridge Regression Model Coefficients against Fraction Deviance Explaineda")
+
+
+plot(fit.lasso, xvar = "dev", label = TRUE,
+     main = "Plot of Fitted Lasso Regression Model Coefficients against Fraction Deviance Explained")
+
+# Using ridge regression, setting alpha = 0, fraction deviance explained changes smoothly. A profound amound of fraction deviance, or r squared is explained for heavily shrunk coefficients. Using lasso regression, coefficients do not vary and approach 0 in a smooth and uniform way.
+
+# Sequentially, in order to select the model, I use glmnet build-in function to conduct cross validation procedure. I determine to apply cross validation with binomial logistic regression model rather than ridge or lasso regression due to the reason that the latter give a explanatory output, not strictly binary. The prediction provides an impressive outcome and exhibits relatively high accuracy. 2334 predicted responses are identical and correct with the 2359 true observations.
+
+# I also conduct modeling selection and data prodiction through the regular stepwise model selection method in forward, backward and both directions, and assign the model with the best AIC, BIC and Cp. However, since the variable size is extremely large, the procedure intensively increases the challenge of finding the best model, I choose that this method would not give the best accuracy. 
+
+
+cvfit <- cv.glmnet(x, y, family = "binomial", type.measure = "class")
+plot(cvfit, main = "Cross Validation for Binomial Logistic Regression")
+
+cv.ridge <- cv.glmnet(x, y, alpha = 0)
+plot(cv.ridge, main = "Cross Validation for Ridge Regression")
+cv.lasso <- cv.glmnet(x, y, alpha = 1)
+plot(cv.lasso, main = "Cross Validation for Lasso Regression")
+
+
+cvfit$lambda.min # 0.00145
+cvfit$lambda.lse # null
+# results returned are only for the SECOND level of the factor response, y = 1
+
+pred <- predict(cvfit, newx = x[1:2359, ], s = "lambda.min", type = "class")
+#pred <- predict(cv.lasso, newx = x[1:2359, ], s = "lambda.min", type = "class")
+
+length(which(pred[1:381] == 1)) # 361 predicted responses are "1" V.S. 381 given responses, 361 are correct for predicting "ad."
+length(which(pred[382:2359] == 0)) # 1973 predicted responses are "0" V.S. 1978 given responses, 1973 are correct for predicting "nonad."
+
+# Main Results
+
+# The variables that I fit into the best model are listed below, and followed by their corresponding coefficients. The analysis and justifications of why this model is an efficient good fit are presented above. 
+
+colnames(Adsfull)[which(coef(cvfit, s = "lambda.min") != 0)] # 134 counts
+
+coef(cvfit, s = "lambda.min")[which(coef(cvfit, s = "lambda.min") != 0)] # 134 counts
+
+# Summary 
+
+# By a series of data clearing and organizing, I compress the massive dataset to a much smaller one. Because of the special case of having both explanatory and dummy variables, along with the dummy response variable, I fit the model with Glmnet, and use cross validation to attain the goal of best prediction. In conclusion, among the total 1558 variables, I am able to predict whether an image on a website is an advertisement or not with a model of 134 variables.
+
+# Reference
+
+# 1. Prof. Nolan's lecture notes, "Logistic Regression", "Model Selection", Spring 2017
+
+# 2. Webpage about "Glmnet Vignette", Trevor Hastie and Junyang Qian, Stanford June 26, 2014
+
+# 3. Applied Regression Analysis Generalized Linear Models, "Chapter 15", John Fox, third edition, 2016
